@@ -10,7 +10,7 @@ func TestTCPTransport(t *testing.T) {
 
 	opts := TCPTransportOpts{
 		ListenAddress: ":8080",
-		Decoder:       &DefaultDecoder{},
+		Decoder:       &GOBDecoder{},
 		HandShakeFunc: NOPHandShakeFunc,
 	}
 	tr := NewTCPTransport(opts)

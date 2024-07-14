@@ -6,3 +6,8 @@ type RPC struct {
 	From    net.Addr
 	Payload []byte
 }
+
+type Payload struct {
+	Key  string
+	Data []byte
+}

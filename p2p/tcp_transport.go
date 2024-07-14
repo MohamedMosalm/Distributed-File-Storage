@@ -1,25 +1,29 @@
 package p2p
 
 import (
+	"bytes"
+	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 )
 
 type TCPPeer struct {
-	conn     net.Conn
+	net.Conn
 	outbound bool
 }
 
 func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	return &TCPPeer{
-		conn:     conn,
+		Conn:     conn,
 		outbound: outbound,
 	}
 }
 
-func (p *TCPPeer) Close() error {
-	return p.conn.Close()
+func (p *TCPPeer) Send(b []byte) error {
+	_, err := p.Write(b)
+	return err
 }
 
 type TCPTransportOpts struct {
@@ -46,6 +50,21 @@ func (t *TCPTransport) Consume() <-chan RPC {
 	return t.rpcChan
 }
 
+func (t *TCPTransport) Close() error {
+	return t.listener.Close()
+}
+
+func (t *TCPTransport) Dial(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	go t.handleconn(conn, true)
+
+	return nil
+}
+
 func (t *TCPTransport) ListenAndAccept() error {
 	var err error
 	t.listener, err = net.Listen("tcp", t.ListenAddress)
@@ -55,23 +74,29 @@ func (t *TCPTransport) ListenAndAccept() error {
 
 	go t.startAcceptLoop()
 
+	fmt.Printf("TCP transport listening on port: %s\n", t.ListenAddress[1:])
+
 	return nil
 }
 
-func (t *TCPTransport) startAcceptLoop() error {
+func (t *TCPTransport) startAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
+
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
+
 		if err != nil {
 			fmt.Printf("error accepting connection: %v\n", err)
 			continue
 		}
 
-		fmt.Printf("new connection %v\n", conn)
-		go t.handleconn(conn)
+		go t.handleconn(conn, false)
 	}
 }
 
-func (t *TCPTransport) handleconn(conn net.Conn) {
+func (t *TCPTransport) handleconn(conn net.Conn, outbound bool) {
 	var err error
 	defer func() {
 		fmt.Printf("dropping peer connection: %s", err)
@@ -90,19 +115,31 @@ func (t *TCPTransport) handleconn(conn net.Conn) {
 	}
 
 	for {
-		rpc := RPC{}
-		err = t.Decoder.Decode(conn, &rpc)
+		p := Payload{}
+		err = gob.NewDecoder(conn).Decode(&p)
 
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Connection closed by remote: %v\n", conn.RemoteAddr())
-				break
 			}
 			fmt.Printf("Error decoding message: %v\n", err)
 			continue
 		}
-		rpc.From = conn.RemoteAddr()
+		fmt.Println("recieved message: ", p)
+
+		buf := new(bytes.Buffer)
+
+		encoder := gob.NewEncoder(buf)
+		if err := encoder.Encode(p); err != nil {
+			fmt.Printf("error encoding payload: %v\n", err)
+		}
+		payload := buf.Bytes()
+
+		rpc := RPC{
+			From:    conn.RemoteAddr(),
+			Payload: payload,
+		}
+
 		t.rpcChan <- rpc
 	}
-	conn.Close()
 }

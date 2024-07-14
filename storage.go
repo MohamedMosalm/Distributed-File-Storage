@@ -112,6 +112,10 @@ func (s *Store) readStream(key string) (io.ReadCloser, error) {
 	return os.Open(pathKey.FullPath(s.Root))
 }
 
+func (s *Store) Write(key string, r io.Reader) error {
+	return s.writeStream(key, r)
+}
+
 func (s *Store) writeStream(key string, r io.Reader) error {
 	pathKey := s.PathTransformFunc(key)
 
@@ -126,8 +130,6 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 		return err
 	}
 	defer f.Close()
-
-	fmt.Println(r)
 
 	n, err := io.Copy(f, r)
 	if err != nil {

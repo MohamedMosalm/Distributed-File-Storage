@@ -1,37 +1,54 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/MohamedMosalm/Distributed-File-Storage/p2p"
 )
 
-func OnPeer(peer p2p.Peer) error {
-	peer.Close()
-	return nil
+func makeFileServer(listenAddr string, nodes ...string) *FileServer {
+	tcpTransportOpts := p2p.TCPTransportOpts{
+		ListenAddress: listenAddr,
+		HandShakeFunc: p2p.NOPHandShakeFunc,
+		Decoder:       &p2p.DefaultDecoder{},
+	}
+
+	tcpTransport := p2p.NewTCPTransport(tcpTransportOpts)
+	fileServerOpts := FileServerOpts{
+		StorageRoot:       "root/" + listenAddr[1:] + "_network",
+		PathTransformFunc: CASPathTransformFunc,
+		Transport:         tcpTransport,
+		BootstrapNodes:    nodes,
+	}
+
+	s := NewFileServer(fileServerOpts)
+
+	tcpTransport.OnPeer = s.OnPeer
+	return s
 }
 
 func main() {
-
-	opts := p2p.TCPTransportOpts{
-		ListenAddress: ":8080",
-		Decoder:       &p2p.DefaultDecoder{},
-		HandShakeFunc: p2p.NOPHandShakeFunc,
-		OnPeer:        OnPeer,
-	}
-	tr := p2p.NewTCPTransport(opts)
+	s1 := makeFileServer(":3000")
+	s2 := makeFileServer(":4000", ":3000")
 
 	go func() {
-		for {
-			msg := <-tr.Consume()
-			fmt.Printf("msg %v\n", msg)
-		}
+		log.Fatal(s1.Start())
 	}()
 
-	if err := tr.ListenAndAccept(); err != nil {
-		log.Fatal(err)
-	}
+	time.Sleep(time.Second)
+
+	go func() {
+		log.Fatal(s2.Start())
+	}()
+
+	time.Sleep(time.Second)
+
+	data := bytes.NewReader([]byte("hello world"))
+	fmt.Println("data sent in main: ", data)
+	s2.StoreData("key", data)
 
 	select {}
 }
