@@ -1,23 +1,23 @@
 package p2p
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
-	"io"
 	"net"
+	"sync"
 )
 
 type TCPPeer struct {
 	net.Conn
 	outbound bool
+	Wg       *sync.WaitGroup
 }
 
 func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	return &TCPPeer{
 		Conn:     conn,
 		outbound: outbound,
+		Wg:       &sync.WaitGroup{},
 	}
 }
 
@@ -44,6 +44,10 @@ func NewTCPTransport(opts TCPTransportOpts) *TCPTransport {
 		TCPTransportOpts: opts,
 		rpcChan:          make(chan RPC),
 	}
+}
+
+func (t *TCPTransport) ListenAddr() string {
+	return t.ListenAddress
 }
 
 func (t *TCPTransport) Consume() <-chan RPC {
@@ -115,31 +119,18 @@ func (t *TCPTransport) handleconn(conn net.Conn, outbound bool) {
 	}
 
 	for {
-		p := Payload{}
-		err = gob.NewDecoder(conn).Decode(&p)
-
-		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("Connection closed by remote: %v\n", conn.RemoteAddr())
-			}
+		rpc := RPC{}
+		if err := t.Decoder.Decode(conn, &rpc); err != nil {
 			fmt.Printf("Error decoding message: %v\n", err)
 			continue
 		}
-		fmt.Println("recieved message: ", p)
+		fmt.Printf("Received message from %v: %v\n", rpc.From, rpc.Payload)
 
-		buf := new(bytes.Buffer)
-
-		encoder := gob.NewEncoder(buf)
-		if err := encoder.Encode(p); err != nil {
-			fmt.Printf("error encoding payload: %v\n", err)
-		}
-		payload := buf.Bytes()
-
-		rpc := RPC{
-			From:    conn.RemoteAddr(),
-			Payload: payload,
-		}
-
+		rpc.From = conn.RemoteAddr().String()
+		peer.Wg.Add(1)
+		fmt.Println("waiting till stream is done")
 		t.rpcChan <- rpc
+		peer.Wg.Wait()
+		fmt.Println("stream done")
 	}
 }

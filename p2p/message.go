@@ -1,13 +1,8 @@
 package p2p
 
-import "net"
+// import "net"
 
 type RPC struct {
-	From    net.Addr
+	From    string
 	Payload []byte
-}
-
-type Payload struct {
-	Key  string
-	Data []byte
 }

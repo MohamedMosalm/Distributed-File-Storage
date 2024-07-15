@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"time"
 
@@ -47,7 +46,6 @@ func main() {
 	time.Sleep(time.Second)
 
 	data := bytes.NewReader([]byte("hello world"))
-	fmt.Println("data sent in main: ", data)
 	s2.StoreData("key", data)
 
 	select {}

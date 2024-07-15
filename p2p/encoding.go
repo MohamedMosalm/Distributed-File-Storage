@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"bufio"
 	"encoding/gob"
 	"io"
 )
@@ -19,11 +18,11 @@ func (dec *GOBDecoder) Decode(r io.Reader, rpc *RPC) error {
 type DefaultDecoder struct{}
 
 func (dec *DefaultDecoder) Decode(r io.Reader, rpc *RPC) error {
-	reader := bufio.NewReader(r)
-	line, err := reader.ReadBytes('\n')
+	buf := make([]byte, 1024)
+	n, err := r.Read(buf)
 	if err != nil {
 		return err
 	}
-	rpc.Payload = line
+	rpc.Payload = buf[:n]
 	return nil
 }
