@@ -112,30 +112,28 @@ func (s *Store) readStream(key string) (io.ReadCloser, error) {
 	return os.Open(pathKey.FullPath(s.Root))
 }
 
-func (s *Store) Write(key string, r io.Reader) error {
+func (s *Store) Write(key string, r io.Reader) (int64, error) {
 	return s.writeStream(key, r)
 }
 
-func (s *Store) writeStream(key string, r io.Reader) error {
+func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
 	pathKey := s.PathTransformFunc(key)
 
 	if err := os.MkdirAll(s.Root+"/"+pathKey.PathName, os.ModePerm); err != nil {
-		return err
+		return 0, err
 	}
 
 	fullPath := pathKey.FullPath(s.Root)
 
 	f, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
 	n, err := io.Copy(f, r)
 	if err != nil {
-		return err
+		return 0, err
 	}
-
-	fmt.Printf("Wrote %d bytes to %s\n", n, fullPath)
-	return nil
+	return n, nil
 }

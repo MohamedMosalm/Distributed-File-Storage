@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	// "bufio"
 	"bytes"
 	"encoding/gob"
 	"fmt"
@@ -61,41 +61,43 @@ func (s *FileServer) loop() {
 				continue
 			}
 
-			fmt.Printf("received rpc: %v\n", msg.Payload)
-
-			peer, ok := s.peers[rpc.From]
-
-			if !ok {
-				fmt.Printf("Peer not found for address: %v\n", rpc.From)
-				continue
+			if err := s.handleMessage(rpc.From, &msg); err != nil {
+				fmt.Println(err)
+				return
 			}
-
-			reader := bufio.NewReader(peer)
-			var fullData bytes.Buffer
-			buf := make([]byte, 1024)
-			for {
-				n, err := reader.Read(buf)
-				if err != nil {
-					if err == io.EOF {
-						fullData.Write(buf[:n])
-						break
-					}
-					fmt.Printf("Error reading from peer: %v\n", err)
-					break
-				}
-				fullData.Write(buf[:n])
-				if n < 1024 {
-					break
-				}
-			}
-
-			fmt.Printf("Received data: %v\n", fullData.String())
-			peer.(*p2p.TCPPeer).Wg.Done()
 
 		case <-s.quitch:
 			return
 		}
 	}
+}
+
+func (s *FileServer) handleMessage(from string, msg *Message) error {
+	switch v := msg.Payload.(type) {
+	case *MessageStoreFile:
+		return s.handleMessageStoreFile(from, *v)
+	default:
+		fmt.Printf("Unknown message type: %T\n", v)
+	}
+	return nil
+}
+
+func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+	peer, ok := s.peers[from]
+	if !ok {
+		return fmt.Errorf("peer %v not found", from)
+	}
+
+	n, err := s.store.Write(msg.Key, io.LimitReader(peer, msg.Size))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Wrote %d bytes to disk\n", n)
+
+	peer.(*p2p.TCPPeer).Wg.Done()
+
+	return nil
 }
 
 func (s *FileServer) bootstrapNetwork() error {
@@ -141,7 +143,8 @@ type Message struct {
 }
 
 type MessageStoreFile struct {
-	Key string
+	Key  string
+	Size int64
 }
 
 func (s *FileServer) broadcast(msg *Message) error {
@@ -160,27 +163,37 @@ func (s *FileServer) broadcast(msg *Message) error {
 }
 
 func (s *FileServer) StoreData(key string, r io.Reader) error {
-	buf := new(bytes.Buffer)
+	fileBuf := new(bytes.Buffer)
+	tee := io.TeeReader(r, fileBuf)
+
+	size, err := s.store.Write(key, tee)
+	if err != nil {
+		return err
+	}
+
+	msgBuf := new(bytes.Buffer)
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key: key,
+			Key:  key,
+			Size: size,
 		},
 	}
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+	if err := gob.NewEncoder(msgBuf).Encode(msg); err != nil {
 		return err
 	}
 
 	for _, peer := range s.peers {
-		if err := peer.Send(buf.Bytes()); err != nil {
+		if err := peer.Send(msgBuf.Bytes()); err != nil {
 			return err
 		}
 	}
 
-	payload := []byte("this is a large file")
 	for _, peer := range s.peers {
-		if err := peer.Send(payload); err != nil {
+		n, err := io.Copy(peer, fileBuf)
+		if err != nil {
 			return err
 		}
+		fmt.Printf("received and stored %d bytes\n", n)
 	}
 
 	return nil

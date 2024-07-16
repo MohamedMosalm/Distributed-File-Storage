@@ -34,8 +34,15 @@ func TestStore(t *testing.T) {
 		}
 		data := []byte(key)
 
-		if err := store.writeStream(key, bytes.NewReader(data)); err != nil {
-			t.Error(err)
+		{
+			n, err := store.writeStream(key, bytes.NewReader(data))
+
+			if err != nil {
+				t.Error(err)
+			}
+			if n != int64(i) {
+				t.Errorf("expected to write %d bytes, wrote %d", i, n)
+			}
 		}
 
 		if ok := store.Has(key); !ok {
