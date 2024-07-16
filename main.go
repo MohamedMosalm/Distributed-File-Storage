@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	// "io/ioutil"
 	"log"
 	"time"
 
@@ -44,9 +46,26 @@ func main() {
 	}()
 
 	time.Sleep(time.Second)
+	for i := 0; i < 10; i++ {
+		data := bytes.NewReader([]byte(fmt.Sprintf("hello world_%d", i)))
+		s2.Store(fmt.Sprintf("key_%d", i), data)
+		time.Sleep(5 * time.Millisecond)
+	}
 
-	data := bytes.NewReader([]byte("hello world"))
-	s2.StoreData("key", data)
+	// data := bytes.NewReader([]byte("hello world"))
+	// s2.Store("key", data)
+
+	// r, err := s2.Get("key")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// b, err := ioutil.ReadAll(r)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// fmt.Println(string(b))
 
 	select {}
 }
